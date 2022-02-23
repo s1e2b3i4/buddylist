@@ -2,7 +2,6 @@
 
 import requests
 import spotipy
-import json
 import time
 import logging
 from signal import signal, SIGINT
@@ -10,11 +9,13 @@ from sys import exit
 import os
 
 LOGLEVEL = os.getenv("LOGLEVEL", "INFO").upper()
+SLEEP_MINUTES = 2
+BUDDY_PLAYLISTS = dict()
 logging.basicConfig(level=LOGLEVEL, format="%(asctime)s - %(levelname)s: %(name)s - %(message)s")
 
 
 def handler(_signal_received, _frame):
-    print("\nGot SIGINT. Exiting gracefully! ✨")
+    print("\nGot SIGINT. Exiting! ✨")
     exit(0)
 
 
@@ -29,7 +30,10 @@ def get_web_token(cookie):
             cookies={f"sp_dc": f"{cookie}"},
             timeout=5,
         )
-    except requests.exceptions.HTTPError as err:
+    except (requests.exceptions.HTTPError, requests.exceptions.TooManyRedirects) as err:
+        if isinstance(err, requests.exceptions.TooManyRedirects):
+            print(f"No valid Cookie supplied:\n=> '{cookie}'")
+            exit(1)
         logging.error(err)
     return r.json()["accessToken"], int(r.json()["accessTokenExpirationTimestampMs"])
 
@@ -62,31 +66,19 @@ def init(cookie):
     token, refreh_time = get_web_token(cookie)
     sp = spotipy.Spotify(auth=token, requests_timeout=5, retries=4, backoff_factor=0.2)
 
-    playlists = None
-    with open("playlists.json", "r") as file:
-        playlists = json.load(file)
-
-    return token, refreh_time, sp, playlists
+    return token, refreh_time, sp
 
 
-def save_playlist_to_disk(playlist_name, playlist_id, playlists):
-    with open("playlists.json", "w") as file:
-        playlists[playlist_name] = playlist_id
-        json.dump(playlists, file, indent=4)
-
-
-def create_new_playlist(sp, playlist_name, playlists):
+def create_new_playlist(sp, playlist_name):
     if playlist_id := playlist_exists(sp, playlist_name):
-        save_playlist_to_disk(playlist_name, playlist_id, playlists)
+        BUDDY_PLAYLISTS[playlist_name] =  playlist_id
         return playlist_id
 
     try:
         user = sp.me()["id"]
         sp.user_playlist_create(user, playlist_name, public=False)
         current_playlist = sp.user_playlists(user, limit=1)
-        save_playlist_to_disk(
-            current_playlist["items"][0]["name"], current_playlist["items"][0]["id"], playlists
-        )
+        BUDDY_PLAYLISTS[current_playlist["items"][0]["name"]] = current_playlist["items"][0]["id"]
     except requests.exceptions.ConnectionError as err:
         logging.error(err)
 
@@ -123,13 +115,13 @@ def hast_to_be_added(sp, playlist_id, song):
     return True
 
 
-def add_to_playlist(sp, current_songs, playlists):
+def add_to_playlist(sp, current_songs):
     for name, song in current_songs.items():
         playlist_id = ""
-        if playlists.get(f"Feed_{name}") is None:
-            playlist_id = create_new_playlist(sp, f"Feed_{name}", playlists)
+        if BUDDY_PLAYLISTS.get(f"Feed_{name}") is None:
+            playlist_id = create_new_playlist(sp, f"Feed_{name}")
         else:
-            playlist_id = playlists[f"Feed_{name}"]
+            playlist_id = BUDDY_PLAYLISTS[f"Feed_{name}"]
 
         if hast_to_be_added(sp, playlist_id, song):
             try:
@@ -147,8 +139,8 @@ def refresh_token(cookie):
 
 
 def main(cookie):
-    token, refresh_time, sp, playlists = init(cookie)
-    print("Running. Press CTRL-C to exit.")
+    token, refresh_time, sp = init(cookie)
+    print("Running. Press CTRL-C to exit.\n")
 
     last_current_songs = None
     while True:
@@ -161,13 +153,12 @@ def main(cookie):
         current_songs = parse_buddylist(buddylist)
         logging.debug(current_songs)
         if last_current_songs != current_songs:
-            add_to_playlist(sp, current_songs, playlists)
+            add_to_playlist(sp, current_songs)
             last_current_songs = current_songs
         else:
             logging.info("No changes")
-        sleep_value = 2 * 60
-        logging.info(f"Sleeping for {sleep_value//60} min...")
-        time.sleep(sleep_value)
+        logging.info(f"Sleeping for {SLEEP_MINUTES} min...")
+        time.sleep(SLEEP_MINUTES*60)
 
 
 if __name__ == "__main__":
