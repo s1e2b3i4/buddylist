@@ -7,6 +7,8 @@ import logging
 from signal import signal, SIGINT
 from sys import exit
 import os
+from json import JSONDecodeError
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 LOGLEVEL = os.getenv("LOGLEVEL", "INFO").upper()
 SLEEP_MINUTES = 2
@@ -20,9 +22,10 @@ def handler(_signal_received, _frame):
 
 
 def current_milli_time():
-    return int(time.time() * 1000)
+    return int(round(time.time() * 1000))
 
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1.5, min=4, max=10), retry=retry_if_exception_type(JSONDecodeError), reraise=True)
 def get_web_token(cookie):
     try:
         r = requests.get(
@@ -146,7 +149,11 @@ def main(cookie):
     while True:
         if refresh_time - current_milli_time() < 600000:
             logging.info("Refresh token")
-            token, refresh_time = refresh_token(cookie)
+            try:
+                token, refresh_time = refresh_token(cookie)
+            except JSONDecodeError as err:
+                logging.error(f"Error after retry: {str(err)}")
+                continue
             sp.set_auth(token)
 
         buddylist = get_buddylist(token)
