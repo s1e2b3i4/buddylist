@@ -44,7 +44,7 @@ def get_web_token(cookie):
             print(f"No valid Cookie supplied:\n=> '{cookie}'")
             exit(1)
         logging.error(err)
-        return ""
+        return "", 0
     return r.json()["accessToken"], int(r.json()["accessTokenExpirationTimestampMs"])
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1.5, min=4, max=10), retry=retry_if_exception_type(ConnectionError), reraise=True)
@@ -162,7 +162,7 @@ def main(cookie):
     last_current_songs = None
     logging.info(f"Entering main loop. Sleep time is set to {SLEEP_MINUTES} min.")
     while True:
-        if refresh_time - current_milli_time() < 600000:
+        if refresh_time - current_milli_time() < 2000:
             logging.info("Refresh token")
             try:
                 token, refresh_time = refresh_token(cookie)
