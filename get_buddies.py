@@ -132,6 +132,14 @@ def has_to_be_added(sp, playlist_id, song):
 
     return True
 
+def has_to_be_added_replay(sp, playlist_id, song):
+    lastSongIndex = sp.playlist_items(playlist_id, fields="total")["total"] - 1
+
+    if(lastSongIndex < 0): return True
+
+    lastSongUri = sp.playlist_items(playlist_id,offset=lastSongIndex,fields='items.track.uri')["items"][0]["track"]["uri"]
+
+    return song != lastSongUri
 
 def add_to_playlist(sp, current_songs):
     for name, song in current_songs.items():
@@ -162,13 +170,14 @@ def add_to_replay_playlist(sp, name, song):
         else:
             playlist_id = BUDDY_REPLAY_PLAYLISTS[f"Replay_{name}"]
 
-        try:
-            sp.playlist_add_items(playlist_id, [song])
-        except ConnectionError as err:
-            logging.error(err)
-            return
+        if(has_to_be_added_replay(sp, playlist_id, song)):
+            try:
+                sp.playlist_add_items(playlist_id, [song])
+            except ConnectionError as err:
+                logging.error(err)
+                return
 
-        logging.info(f"Add '{song}' to Feed_{name}")    
+            logging.info(f"Add '{song}' to Replay_{name}")    
 
 
 def refresh_token(cookie):
