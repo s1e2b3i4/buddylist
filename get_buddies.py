@@ -14,7 +14,10 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 LOGLEVEL = os.getenv("LOGLEVEL", "INFO").upper()
 SLEEP_MINUTES = 2
 BUDDY_PLAYLISTS = dict()
+BUDDY_REPLAY_PLAYLISTS = dict()
 logging.basicConfig(level=LOGLEVEL, format="%(asctime)s - %(levelname)s: %(name)s - %(message)s")
+
+REPLAY_PLAYLIST_ENABLED = True
 
 
 def handler(_signal_received, _frame):
@@ -114,7 +117,7 @@ def playlist_exists(sp, playlist_name):
     return None
 
 
-def hast_to_be_added(sp, playlist_id, song):
+def has_to_be_added(sp, playlist_id, song):
     try:
         songs = sp.playlist(playlist_id, fields="tracks,next")["tracks"]
     except ConnectionError as err:
@@ -138,7 +141,10 @@ def add_to_playlist(sp, current_songs):
         else:
             playlist_id = BUDDY_PLAYLISTS[f"Feed_{name}"]
 
-        if hast_to_be_added(sp, playlist_id, song):
+        if(REPLAY_PLAYLIST_ENABLED):
+            add_to_replay_playlist(sp, name, song)
+
+        if has_to_be_added(sp, playlist_id, song):
             try:
                 sp.playlist_add_items(playlist_id, [song])
             except ConnectionError as err:
@@ -148,6 +154,21 @@ def add_to_playlist(sp, current_songs):
             logging.info(f"Add '{song}' to Feed_{name}")
         else:
             logging.info(f"No change in Feed for {name}")
+
+def add_to_replay_playlist(sp, name, song):
+        playlist_id = ""
+        if BUDDY_REPLAY_PLAYLISTS.get(f"Replay_{name}") is None:
+            playlist_id = create_new_playlist(sp, f"Replay_{name}")
+        else:
+            playlist_id = BUDDY_REPLAY_PLAYLISTS[f"Replay_{name}"]
+
+        try:
+            sp.playlist_add_items(playlist_id, [song])
+        except ConnectionError as err:
+            logging.error(err)
+            return
+
+        logging.info(f"Add '{song}' to Feed_{name}")    
 
 
 def refresh_token(cookie):
@@ -192,5 +213,6 @@ def main(cookie):
 
 if __name__ == "__main__":
     signal(SIGINT, handler)
-    cookie = os.getenv("SPOTIFY_COOKIE")
-    main(cookie)
+    with open('cookie.txt', 'r') as file:
+        cookie = file.read().replace('\n', '')
+        main(cookie)   
