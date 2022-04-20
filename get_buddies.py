@@ -14,7 +14,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 LOGLEVEL = os.getenv("LOGLEVEL", "INFO").upper()
 SLEEP_MINUTES = 2
 BUDDY_PLAYLISTS = dict()
-BUDDY_REPLAY_PLAYLISTS = dict()
 logging.basicConfig(level=LOGLEVEL, format="%(asctime)s - %(levelname)s: %(name)s - %(message)s")
 
 REPLAY_PLAYLIST_ENABLED = True
@@ -165,10 +164,10 @@ def add_to_playlist(sp, current_songs):
 
 def add_to_replay_playlist(sp, name, song):
         playlist_id = ""
-        if BUDDY_REPLAY_PLAYLISTS.get(f"Replay_{name}") is None:
+        if BUDDY_PLAYLISTS.get(f"Replay_{name}") is None:
             playlist_id = create_new_playlist(sp, f"Replay_{name}")
         else:
-            playlist_id = BUDDY_REPLAY_PLAYLISTS[f"Replay_{name}"]
+            playlist_id = BUDDY_PLAYLISTS[f"Replay_{name}"]
 
         if(has_to_be_added_replay(sp, playlist_id, song)):
             try:
