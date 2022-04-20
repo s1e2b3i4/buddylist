@@ -145,6 +145,7 @@ def has_to_be_added_replay(sp, playlist_id, song):
 
 def add_to_playlist(sp, current_songs):
     for name, song in current_songs.items():
+        if isLocalSong(song) : continue
         playlist_id = ""
         if BUDDY_PLAYLISTS.get(f"Feed_{name}") is None:
             playlist_id = create_new_playlist(sp, f"Feed_{name}")
@@ -166,21 +167,29 @@ def add_to_playlist(sp, current_songs):
             logging.info(f"No change in Feed for {name}")
 
 def add_to_replay_playlist(sp, name, song):
-        playlist_id = ""
-        if BUDDY_PLAYLISTS.get(f"Replay_{name}") is None:
-            playlist_id = create_new_playlist(sp, f"Replay_{name}")
-        else:
-            playlist_id = BUDDY_PLAYLISTS[f"Replay_{name}"]
+    if isLocalSong(song) : return
 
-        if(has_to_be_added_replay(sp, playlist_id, song)):
-            try:
-                sp.playlist_add_items(playlist_id, [song])
-            except ConnectionError as err:
-                logging.error(err)
-                return
+    playlist_id = ""
+    if BUDDY_PLAYLISTS.get(f"Replay_{name}") is None:
+        playlist_id = create_new_playlist(sp, f"Replay_{name}")
+    else:
+        playlist_id = BUDDY_PLAYLISTS[f"Replay_{name}"]
 
-            logging.info(f"Add '{song}' to Replay_{name}")    
+    if(has_to_be_added_replay(sp, playlist_id, song)):
+        try:
+            sp.playlist_add_items(playlist_id, [song])
+        except ConnectionError as err:
+            logging.error(err)
+            return
 
+        logging.info(f"Add '{song}' to Replay_{name}")    
+
+def isLocalSong(song:str):
+    if "spotify:local:" in song: 
+        logging.info(f"{song} is local")
+        return True
+
+    return False
 
 def refresh_token(cookie):
     token, refresh_time = get_web_token(cookie)
