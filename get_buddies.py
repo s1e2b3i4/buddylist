@@ -18,6 +18,7 @@ BUDDY_PLAYLISTS = dict()
 logging.basicConfig(level=LOGLEVEL, format="%(asctime)s - %(levelname)s: %(name)s - %(message)s")
 
 REPLAY_PLAYLIST_ENABLED = False
+REPLAY_SELF = False
 
 
 def handler(_signal_received, _frame):
@@ -190,6 +191,8 @@ def main(cookie):
     print("Running. Press CTRL-C to exit.\n")
 
     last_current_songs = None
+    last_own_current_song = None
+    own_name = sp.current_user()["display_name"]
     logging.info(f"Entering main loop. Sleep time is set to {SLEEP_MINUTES} min.")
     while True:
         if refresh_time - current_milli_time() < 2000:
@@ -209,6 +212,14 @@ def main(cookie):
             logging.error(f"Error after retry: {str(err)}")
             _sleep()
             continue
+
+        if REPLAY_SELF :
+            own_current_song = sp.current_user_playing_track()["item"]["uri"]
+            if last_own_current_song != own_current_song:
+                add_to_replay_playlist(sp, own_name, own_current_song)
+                last_own_current_song = own_current_song
+            else:
+                logging.debug("No own changes")
 
         current_songs = parse_buddylist(buddylist)
         logging.debug(current_songs)
