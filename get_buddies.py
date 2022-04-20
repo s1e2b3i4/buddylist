@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import sys
 import requests
 import spotipy
 import time
@@ -184,8 +185,29 @@ def refresh_token(cookie):
     token, refresh_time = get_web_token(cookie)
     return token, refresh_time
 
+def setup_logger():
+    logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+    rootLogger = logging.getLogger()
+    rootLogger.setLevel(logging.NOTSET)
+
+    fileHandlerAll = logging.FileHandler("debug.log")
+    fileHandlerAll.setFormatter(logFormatter)
+    fileHandlerAll.setLevel(logging.NOTSET)
+    rootLogger.addHandler(fileHandlerAll)
+
+    fileHandlerInfo = logging.FileHandler("info.log")
+    fileHandlerInfo.setFormatter(logFormatter)
+    fileHandlerInfo.setLevel(logging.INFO)
+    rootLogger.addHandler(fileHandlerInfo)
+
+    consoleHandler = logging.StreamHandler(sys.stdout)
+    consoleHandler.setFormatter(logFormatter)
+    consoleHandler.setLevel(logging.INFO)
+    rootLogger.addHandler(consoleHandler)
 
 def main(cookie):
+    setup_logger()
+
     token, refresh_time, sp = init(cookie)
     print("Running. Press CTRL-C to exit.\n")
 
