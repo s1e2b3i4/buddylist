@@ -243,15 +243,20 @@ def main(cookie):
             _sleep()
             continue
 
-        if REPLAY_SELF :
-            result = sp.current_user_playing_track();
-            if result != None : 
-                own_current_song = result["item"]["uri"]
-                if last_own_current_song != own_current_song:
-                    add_to_replay_playlist(sp, own_name, own_current_song)
-                    last_own_current_song = own_current_song
-                else:
-                    logging.debug("No own changes")
+        try:
+            if REPLAY_SELF :
+                result = sp.current_user_playing_track()
+                if result != None : 
+                    own_current_song = result["item"]["uri"]
+                    if last_own_current_song != own_current_song:
+                        add_to_replay_playlist(sp, own_name, own_current_song)
+                        last_own_current_song = own_current_song
+                    else:
+                        logging.debug("No own changes")
+        except Exception as err:
+            logging.error(f"Error after retry: {str(err)}")
+            _sleep()
+            continue
 
         current_songs = parse_buddylist(buddylist)
         logging.debug(current_songs)
