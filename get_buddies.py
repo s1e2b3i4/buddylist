@@ -264,7 +264,7 @@ def main(cookie):
                 logging.debug("No changes")
             _sleep()
         except Exception as err:
-                logging.error(f"Error after retry: {str(err)}")
+                logging.error(f"Error in main loop: {str(err)}")
                 _sleep()
                 continue
 
