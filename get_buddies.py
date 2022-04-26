@@ -225,25 +225,25 @@ def main(cookie):
     own_name = sp.current_user()["display_name"]
     logging.info(f"Entering main loop. Sleep time is set to {SLEEP_MINUTES} min.")
     while True:
-        if refresh_time - current_milli_time() < 2000:
-            logging.info("Refresh token")
+        try:
+            if refresh_time - current_milli_time() < 2000:
+                logging.info("Refresh token")
+                try:
+                    token, refresh_time = refresh_token(cookie)
+                except JSONDecodeError as err:
+                    logging.error(f"Error after retry: {str(err)}")
+                    _sleep()
+                    continue
+
+                sp.set_auth(token)
+
             try:
-                token, refresh_time = refresh_token(cookie)
-            except JSONDecodeError as err:
+                buddylist = get_buddylist(token)
+            except ConnectionError as err:
                 logging.error(f"Error after retry: {str(err)}")
                 _sleep()
                 continue
 
-            sp.set_auth(token)
-
-        try:
-            buddylist = get_buddylist(token)
-        except ConnectionError as err:
-            logging.error(f"Error after retry: {str(err)}")
-            _sleep()
-            continue
-
-        try:
             if REPLAY_SELF :
                 result = sp.current_user_playing_track()
                 if result != None : 
@@ -253,19 +253,20 @@ def main(cookie):
                         last_own_current_song = own_current_song
                     else:
                         logging.debug("No own changes")
-        except Exception as err:
-            logging.error(f"Error after retry: {str(err)}")
-            _sleep()
-            continue
+            
 
-        current_songs = parse_buddylist(buddylist)
-        logging.debug(current_songs)
-        if last_current_songs != current_songs:
-            add_to_playlist(sp, current_songs)
-            last_current_songs = current_songs
-        else:
-            logging.debug("No changes")
-        _sleep()
+            current_songs = parse_buddylist(buddylist)
+            logging.debug(current_songs)
+            if last_current_songs != current_songs:
+                add_to_playlist(sp, current_songs)
+                last_current_songs = current_songs
+            else:
+                logging.debug("No changes")
+            _sleep()
+        except Exception as err:
+                logging.error(f"Error after retry: {str(err)}")
+                _sleep()
+                continue
 
 
 if __name__ == "__main__":
