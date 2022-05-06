@@ -271,6 +271,12 @@ def main(cookie):
 
 if __name__ == "__main__":
     signal(SIGINT, handler)
-    with open('cookie.txt', 'r') as file:
-        cookie = file.read().replace('\n', '')
-        main(cookie)   
+    cookie = ""
+
+    if os.path.exists('cookie.txt'):
+        with open('cookie.txt', 'r') as file:
+            cookie = file.read().replace('\n', '')
+    else :
+        cookie = os.getenv("SPOTIFY_COOKIE")
+    
+    main(cookie)   
