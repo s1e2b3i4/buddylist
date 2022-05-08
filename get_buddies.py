@@ -13,13 +13,11 @@ import os
 from json import JSONDecodeError
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-LOGLEVEL = os.getenv("LOGLEVEL", "INFO").upper()
-SLEEP_MINUTES = 2
-BUDDY_PLAYLISTS = dict()
-logging.basicConfig(level=LOGLEVEL, format="%(asctime)s - %(levelname)s: %(name)s - %(message)s")
+BUDDY_PLAYLISTS = {}
 
-REPLAY_PLAYLIST_ENABLED = False
-REPLAY_SELF = False
+SLEEP_MINUTES = int(os.getenv("SLEEP_MINUTES", "2"))
+TRACK_REPLAY_PLAYLIST = os.getenv("TRACK_REPLAY_PLAYLIST", "False").lower() in ("true", "1")
+TRACK_SELF = os.getenv("TRACK_SELF", "False").lower() in ("true", "1")
 
 
 def handler(_signal_received, _frame):
@@ -33,17 +31,23 @@ def current_milli_time():
 
 def _sleep():
     logging.debug(f"Sleeping for {SLEEP_MINUTES} min...")
-    time.sleep(SLEEP_MINUTES*60)
+    time.sleep(SLEEP_MINUTES * 60)
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1.5, min=4, max=10), retry=retry_if_exception_type(JSONDecodeError), reraise=True)
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1.5, min=4, max=10),
+    retry=retry_if_exception_type(JSONDecodeError),
+    reraise=True,
+)
 def get_web_token(cookie):
     try:
         r = requests.get(
             "https://open.spotify.com/get_access_token?reason=transport&productType=web_player",
-            cookies={f"sp_dc": f"{cookie}"},
+            cookies={"sp_dc": f"{cookie}"},
             timeout=5,
         )
+
     except (HTTPError, TooManyRedirects) as err:
         if isinstance(err, TooManyRedirects):
             print(f"No valid Cookie supplied:\n=> '{cookie}'")
@@ -52,7 +56,13 @@ def get_web_token(cookie):
         return "", 0
     return r.json()["accessToken"], int(r.json()["accessTokenExpirationTimestampMs"])
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1.5, min=4, max=10), retry=retry_if_exception_type(ConnectionError), reraise=True)
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1.5, min=4, max=10),
+    retry=retry_if_exception_type(ConnectionError),
+    reraise=True,
+)
 def get_buddylist(token):
     try:
         r = requests.get(
@@ -67,7 +77,7 @@ def get_buddylist(token):
 
 
 def parse_buddylist(buddylist):
-    current_songs = dict()
+    current_songs = {}
     try:
         for friend in buddylist["friends"]:
             current_songs[friend["user"]["name"]] = friend["track"]["uri"]
@@ -88,7 +98,7 @@ def init(cookie):
 
 def create_new_playlist(sp, playlist_name):
     if playlist_id := playlist_exists(sp, playlist_name):
-        BUDDY_PLAYLISTS[playlist_name] =  playlist_id
+        BUDDY_PLAYLISTS[playlist_name] = playlist_id
         return playlist_id
 
     try:
@@ -134,25 +144,31 @@ def has_to_be_added(sp, playlist_id, song):
 
     return True
 
+
 def has_to_be_added_replay(sp, playlist_id, song):
-    lastSongIndex = sp.playlist_items(playlist_id, fields="total")["total"] - 1
+    last_song_index = sp.playlist_items(playlist_id, fields="total")["total"] - 1
 
-    if(lastSongIndex < 0): return True
+    if last_song_index < 0:
+        return True
 
-    lastSongUri = sp.playlist_items(playlist_id,offset=lastSongIndex,fields='items.track.uri')["items"][0]["track"]["uri"]
+    last_song_uri = sp.playlist_items(
+        playlist_id, offset=last_song_index, fields="items.track.uri"
+    )["items"][0]["track"]["uri"]
 
-    return song != lastSongUri
+    return song != last_song_uri
+
 
 def add_to_playlist(sp, current_songs):
     for name, song in current_songs.items():
-        if isLocalSong(song) : continue
+        if is_local_song(song):
+            continue
         playlist_id = ""
         if BUDDY_PLAYLISTS.get(f"Feed_{name}") is None:
             playlist_id = create_new_playlist(sp, f"Feed_{name}")
         else:
             playlist_id = BUDDY_PLAYLISTS[f"Feed_{name}"]
 
-        if(REPLAY_PLAYLIST_ENABLED):
+        if TRACK_REPLAY_PLAYLIST:
             add_to_replay_playlist(sp, name, song)
 
         if has_to_be_added(sp, playlist_id, song):
@@ -166,8 +182,10 @@ def add_to_playlist(sp, current_songs):
         else:
             logging.info(f"No change in Feed for {name}")
 
+
 def add_to_replay_playlist(sp, name, song):
-    if isLocalSong(song) : return
+    if is_local_song(song):
+        return
 
     playlist_id = ""
     if BUDDY_PLAYLISTS.get(f"Replay_{name}") is None:
@@ -175,45 +193,51 @@ def add_to_replay_playlist(sp, name, song):
     else:
         playlist_id = BUDDY_PLAYLISTS[f"Replay_{name}"]
 
-    if(has_to_be_added_replay(sp, playlist_id, song)):
+    if has_to_be_added_replay(sp, playlist_id, song):
         try:
             sp.playlist_add_items(playlist_id, [song])
         except ConnectionError as err:
             logging.error(err)
             return
 
-        logging.info(f"Add '{song}' to Replay_{name}")    
+        logging.info(f"Add '{song}' to Replay_{name}")
 
-def isLocalSong(song:str):
-    if "spotify:local:" in song: 
+
+def is_local_song(song: str):
+    if "spotify:local:" in song:
         logging.info(f"{song} is local")
         return True
 
     return False
 
+
 def refresh_token(cookie):
     token, refresh_time = get_web_token(cookie)
     return token, refresh_time
 
+
 def setup_logger():
-    logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
-    rootLogger = logging.getLogger()
-    rootLogger.setLevel(logging.NOTSET)
+    log_formatter = logging.Formatter(
+        "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s"
+    )
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.NOTSET)
 
-    fileHandlerAll = logging.FileHandler("debug.log")
-    fileHandlerAll.setFormatter(logFormatter)
-    fileHandlerAll.setLevel(logging.NOTSET)
-    rootLogger.addHandler(fileHandlerAll)
+    file_handler_all = logging.FileHandler("debug.log")
+    file_handler_all.setFormatter(log_formatter)
+    file_handler_all.setLevel(logging.NOTSET)
+    root_logger.addHandler(file_handler_all)
 
-    fileHandlerInfo = logging.FileHandler("info.log")
-    fileHandlerInfo.setFormatter(logFormatter)
-    fileHandlerInfo.setLevel(logging.INFO)
-    rootLogger.addHandler(fileHandlerInfo)
+    file_handler_info = logging.FileHandler("info.log")
+    file_handler_info.setFormatter(log_formatter)
+    file_handler_info.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler_info)
 
-    consoleHandler = logging.StreamHandler(sys.stdout)
-    consoleHandler.setFormatter(logFormatter)
-    consoleHandler.setLevel(logging.INFO)
-    rootLogger.addHandler(consoleHandler)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(log_formatter)
+    console_handler.setLevel(os.getenv("LOGLEVEL", "INFO").upper())
+    root_logger.addHandler(console_handler)
+
 
 def main(cookie):
     setup_logger()
@@ -245,7 +269,7 @@ def main(cookie):
                 _sleep()
                 continue
 
-            if REPLAY_SELF:
+            if TRACK_SELF:
                 result = sp.current_user_playing_track()
                 if result is not None:
                     own_current_song = result["item"]["uri"]
@@ -254,7 +278,6 @@ def main(cookie):
                         last_own_current_song = own_current_song
                     else:
                         logging.debug("No own changes")
-            
 
             current_songs = parse_buddylist(buddylist)
             logging.debug(current_songs)
@@ -265,9 +288,9 @@ def main(cookie):
                 logging.debug("No changes")
             _sleep()
         except Exception as err:
-                logging.error(f"Error in main loop: {str(err)}")
-                _sleep()
-                continue
+            logging.error(f"Error in main loop: {str(err)}")
+            _sleep()
+            continue
 
 
 if __name__ == "__main__":
