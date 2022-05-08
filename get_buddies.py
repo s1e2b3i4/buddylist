@@ -6,6 +6,7 @@ import time
 import logging
 from signal import signal, SIGINT
 from sys import exit
+from pathlib import Path
 from requests.exceptions import ConnectionError, HTTPError, TooManyRedirects
 import os
 from json import JSONDecodeError
@@ -15,6 +16,8 @@ LOGLEVEL = os.getenv("LOGLEVEL", "INFO").upper()
 SLEEP_MINUTES = 2
 BUDDY_PLAYLISTS = dict()
 logging.basicConfig(level=LOGLEVEL, format="%(asctime)s - %(levelname)s: %(name)s - %(message)s")
+
+REPLAY_PLAYLIST_ENABLED = False
 
 
 def handler(_signal_received, _frame):
@@ -114,7 +117,7 @@ def playlist_exists(sp, playlist_name):
     return None
 
 
-def hast_to_be_added(sp, playlist_id, song):
+def has_to_be_added(sp, playlist_id, song):
     try:
         songs = sp.playlist(playlist_id, fields="tracks,next")["tracks"]
     except ConnectionError as err:
@@ -129,6 +132,14 @@ def hast_to_be_added(sp, playlist_id, song):
 
     return True
 
+def has_to_be_added_replay(sp, playlist_id, song):
+    lastSongIndex = sp.playlist_items(playlist_id, fields="total")["total"] - 1
+
+    if(lastSongIndex < 0): return True
+
+    lastSongUri = sp.playlist_items(playlist_id,offset=lastSongIndex,fields='items.track.uri')["items"][0]["track"]["uri"]
+
+    return song != lastSongUri
 
 def add_to_playlist(sp, current_songs):
     for name, song in current_songs.items():
@@ -138,7 +149,10 @@ def add_to_playlist(sp, current_songs):
         else:
             playlist_id = BUDDY_PLAYLISTS[f"Feed_{name}"]
 
-        if hast_to_be_added(sp, playlist_id, song):
+        if(REPLAY_PLAYLIST_ENABLED):
+            add_to_replay_playlist(sp, name, song)
+
+        if has_to_be_added(sp, playlist_id, song):
             try:
                 sp.playlist_add_items(playlist_id, [song])
             except ConnectionError as err:
@@ -148,6 +162,22 @@ def add_to_playlist(sp, current_songs):
             logging.info(f"Add '{song}' to Feed_{name}")
         else:
             logging.info(f"No change in Feed for {name}")
+
+def add_to_replay_playlist(sp, name, song):
+        playlist_id = ""
+        if BUDDY_PLAYLISTS.get(f"Replay_{name}") is None:
+            playlist_id = create_new_playlist(sp, f"Replay_{name}")
+        else:
+            playlist_id = BUDDY_PLAYLISTS[f"Replay_{name}"]
+
+        if(has_to_be_added_replay(sp, playlist_id, song)):
+            try:
+                sp.playlist_add_items(playlist_id, [song])
+            except ConnectionError as err:
+                logging.error(err)
+                return
+
+            logging.info(f"Add '{song}' to Replay_{name}")    
 
 
 def refresh_token(cookie):
@@ -192,5 +222,8 @@ def main(cookie):
 
 if __name__ == "__main__":
     signal(SIGINT, handler)
-    cookie = os.getenv("SPOTIFY_COOKIE")
+    try:
+        cookie = Path("cookie.txt").read_text().replace("\n", "")
+    except FileNotFoundError as err:
+        cookie = os.getenv("SPOTIFY_COOKIE")
     main(cookie)
