@@ -5,6 +5,7 @@ import requests
 import spotipy
 import time
 import logging
+from datetime import datetime
 from signal import signal, SIGINT
 from sys import exit
 from pathlib import Path
@@ -162,7 +163,6 @@ def add_to_playlist(sp, current_songs):
     for name, song in current_songs.items():
         if is_local_song(song):
             continue
-        playlist_id = ""
         if BUDDY_PLAYLISTS.get(f"Feed_{name}") is None:
             playlist_id = create_new_playlist(sp, f"Feed_{name}")
         else:
@@ -173,7 +173,7 @@ def add_to_playlist(sp, current_songs):
 
         if has_to_be_added(sp, playlist_id, song):
             try:
-                sp.playlist_add_items(playlist_id, [song])
+                add_song_to_playlist(sp, playlist_id, f"Feed_{name}", song)
             except ConnectionError as err:
                 logging.error(err)
                 return
@@ -187,7 +187,6 @@ def add_to_replay_playlist(sp, name, song):
     if is_local_song(song):
         return
 
-    playlist_id = ""
     if BUDDY_PLAYLISTS.get(f"Replay_{name}") is None:
         playlist_id = create_new_playlist(sp, f"Replay_{name}")
     else:
@@ -195,12 +194,29 @@ def add_to_replay_playlist(sp, name, song):
 
     if has_to_be_added_replay(sp, playlist_id, song):
         try:
-            sp.playlist_add_items(playlist_id, [song])
+            add_song_to_playlist(sp, playlist_id, f"Replay_{name}", song)
         except ConnectionError as err:
             logging.error(err)
             return
 
         logging.info(f"Add '{song}' to Replay_{name}")
+
+
+def rename_playlist(sp, playlist_id, playlist_name):
+    new_name = f"{playlist_name}_{datetime.now().strftime('%Y-%m-%d')}"
+    logging.info(f"Rename Playlist: {playlist_name} -> {new_name}")
+    sp.playlist_change_details(playlist_id, name=new_name)
+
+
+def add_song_to_playlist(sp, playlist_id, playlist_name, song):
+    try:
+        sp.playlist_add_items(playlist_id, [song])
+    except spotipy.exceptions.SpotifyException as err:
+        if err.http_status == 400 and "Playlist size limit reached" in err.msg:
+            rename_playlist(sp, playlist_id, playlist_name)
+            new_playlist_id = create_new_playlist(sp, playlist_name)
+            BUDDY_PLAYLISTS[playlist_name] = new_playlist_id
+            sp.playlist_add_items(new_playlist_id, [song])
 
 
 def is_local_song(song: str):

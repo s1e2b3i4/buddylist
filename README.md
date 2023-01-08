@@ -57,7 +57,10 @@ docker run --env SPOTIFY_COOKIE=YOUR-SPOTIFY-COOKIE buddylist
 - Set the `TRACK_REPLAY_PLAYLIST` environment variable to also track repeatedly played songs. (Default: `False`)
 - Set the `TRACK_SELF` environment variable to track your own listening history. (Default: `False`)
 
-## Notice
+## Note
 
-The `sp_dc` cookie will be valid for _1 year_.
+- The `sp_dc` cookie will be valid for _1 year_. 
 After that, you have to get a new cookie from the Spotify web player.
+- Playlists are limited to a maximum of 11,000 songs.
+If a playlist exceeds this length, the current date is added to the playlist name (`Feed_<username>` -> `Feed_<username>_<YEAR-MONTH-DAY>`).
+This playlist will not be used further for new songs. New songs will be added to a new playlist with the same name as the original playlist from now on.
