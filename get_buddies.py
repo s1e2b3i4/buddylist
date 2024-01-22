@@ -138,7 +138,8 @@ def has_to_be_added(sp, playlist_id, song):
         return False
 
     while songs:
-        for s in songs["items"]:
+        logging.debug(songs.keys())
+        for s in songs.get("items", []):
             if song == s["track"]["uri"]:
                 return False
         songs = sp.next(songs)
@@ -304,7 +305,7 @@ def main(cookie):
                 logging.debug("No changes")
             _sleep()
         except Exception as err:
-            logging.error(f"Error in main loop: {str(err)}")
+            logging.exception("Error in main loop:")
             _sleep()
             continue
 
