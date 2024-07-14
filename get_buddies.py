@@ -132,7 +132,7 @@ def playlist_exists(sp, playlist_name):
 
 def has_to_be_added(sp, playlist_id, song):
     try:
-        songs = sp.playlist(playlist_id, fields="tracks,next")["tracks"]
+        songs = sp.playlist_items(playlist_id, fields="items,next")
     except ConnectionError as err:
         logging.error(err)
         return False
