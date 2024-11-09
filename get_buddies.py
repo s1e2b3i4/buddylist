@@ -21,6 +21,32 @@ TRACK_REPLAY_PLAYLIST = os.getenv("TRACK_REPLAY_PLAYLIST", "False").lower() in (
 TRACK_SELF = os.getenv("TRACK_SELF", "False").lower() in ("true", "1")
 
 
+def setup_logger():
+    log_formatter = logging.Formatter(
+        "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s"
+    )
+    module_logger = logging.getLogger(__name__)
+    module_logger.setLevel(logging.DEBUG)
+
+    file_handler_all = logging.FileHandler("debug.log")
+    file_handler_all.setFormatter(log_formatter)
+    file_handler_all.setLevel(logging.DEBUG)
+    module_logger.addHandler(file_handler_all)
+
+    file_handler_info = logging.FileHandler("info.log")
+    file_handler_info.setFormatter(log_formatter)
+    file_handler_info.setLevel(logging.INFO)
+    module_logger.addHandler(file_handler_info)
+
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(log_formatter)
+    console_handler.setLevel(os.getenv("LOGLEVEL", "INFO").upper())
+    module_logger.addHandler(console_handler)
+
+    return module_logger
+
+LOGGER = setup_logger()
+
 def handler(_signal_received, _frame):
     print("\nGot SIGINT. Exiting! ✨")
     exit(0)
@@ -31,7 +57,7 @@ def current_milli_time():
 
 
 def _sleep():
-    logging.debug(f"Sleeping for {SLEEP_MINUTES} min...")
+    LOGGER.debug(f"Sleeping for {SLEEP_MINUTES} min...")
     time.sleep(SLEEP_MINUTES * 60)
 
 
@@ -53,7 +79,7 @@ def get_web_token(cookie):
         if isinstance(err, TooManyRedirects):
             print(f"No valid Cookie supplied:\n=> '{cookie}'")
             exit(1)
-        logging.error(err)
+        LOGGER.error(err)
         return "", 0
     return r.json()["accessToken"], int(r.json()["accessTokenExpirationTimestampMs"])
 
@@ -72,7 +98,7 @@ def get_buddylist(token):
             timeout=10,
         )
     except HTTPError as err:
-        logging.error(err)
+        LOGGER.error(err)
         return {}
     return r.json()
 
@@ -83,8 +109,8 @@ def parse_buddylist(buddylist):
         for friend in buddylist["friends"]:
             current_songs[friend["user"]["name"]] = friend["track"]["uri"]
     except KeyError as err:
-        logging.error(err)
-        logging.error(buddylist)
+        LOGGER.error(err)
+        LOGGER.error(buddylist)
         return ""
 
     return current_songs
@@ -108,7 +134,7 @@ def create_new_playlist(sp, playlist_name):
         current_playlist = sp.user_playlists(user, limit=1)
         BUDDY_PLAYLISTS[current_playlist["items"][0]["name"]] = current_playlist["items"][0]["id"]
     except ConnectionError as err:
-        logging.error(err)
+        LOGGER.error(err)
         return ""
 
     return current_playlist["items"][0]["id"]
@@ -118,7 +144,7 @@ def playlist_exists(sp, playlist_name):
     try:
         playlists = sp.current_user_playlists()
     except ConnectionError as err:
-        logging.error(err)
+        LOGGER.error(err)
         return None
 
     while playlists:
@@ -134,11 +160,10 @@ def has_to_be_added(sp, playlist_id, song):
     try:
         songs = sp.playlist_items(playlist_id, fields="items,next")
     except ConnectionError as err:
-        logging.error(err)
+        LOGGER.error(err)
         return False
 
     while songs:
-        logging.debug(songs.keys())
         for s in songs.get("items", []):
             if song == s["track"]["uri"]:
                 return False
@@ -176,12 +201,12 @@ def add_to_playlist(sp, current_songs):
             try:
                 add_song_to_playlist(sp, playlist_id, f"Feed_{name}", song)
             except ConnectionError as err:
-                logging.error(err)
+                LOGGER.error(err)
                 return
 
-            logging.info(f"Add '{song}' to Feed_{name}")
+            LOGGER.info(f"Add '{song}' to Feed_{name}")
         else:
-            logging.info(f"No change in Feed for {name}")
+            LOGGER.info(f"No change in Feed for {name}")
 
 
 def add_to_replay_playlist(sp, name, song):
@@ -197,15 +222,15 @@ def add_to_replay_playlist(sp, name, song):
         try:
             add_song_to_playlist(sp, playlist_id, f"Replay_{name}", song)
         except ConnectionError as err:
-            logging.error(err)
+            LOGGER.error(err)
             return
 
-        logging.info(f"Add '{song}' to Replay_{name}")
+        LOGGER.info(f"Add '{song}' to Replay_{name}")
 
 
 def rename_playlist(sp, playlist_id, playlist_name):
     new_name = f"{playlist_name}_{datetime.now().strftime('%Y-%m-%d')}"
-    logging.info(f"Rename Playlist: {playlist_name} -> {new_name}")
+    LOGGER.info(f"Rename Playlist: {playlist_name} -> {new_name}")
     sp.playlist_change_details(playlist_id, name=new_name)
 
 
@@ -222,7 +247,7 @@ def add_song_to_playlist(sp, playlist_id, playlist_name, song):
 
 def is_local_song(song: str):
     if "spotify:local:" in song:
-        logging.info(f"{song} is local")
+        LOGGER.info(f"{song} is local")
         return True
 
     return False
@@ -233,47 +258,22 @@ def refresh_token(cookie):
     return token, refresh_time
 
 
-def setup_logger():
-    log_formatter = logging.Formatter(
-        "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s"
-    )
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.NOTSET)
-
-    file_handler_all = logging.FileHandler("debug.log")
-    file_handler_all.setFormatter(log_formatter)
-    file_handler_all.setLevel(logging.NOTSET)
-    root_logger.addHandler(file_handler_all)
-
-    file_handler_info = logging.FileHandler("info.log")
-    file_handler_info.setFormatter(log_formatter)
-    file_handler_info.setLevel(logging.INFO)
-    root_logger.addHandler(file_handler_info)
-
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(log_formatter)
-    console_handler.setLevel(os.getenv("LOGLEVEL", "INFO").upper())
-    root_logger.addHandler(console_handler)
-
-
 def main(cookie):
-    setup_logger()
-
     token, refresh_time, sp = init(cookie)
     print("Running. Press CTRL-C to exit.\n")
 
     last_current_songs = None
     last_own_current_song = None
     own_name = sp.current_user()["display_name"]
-    logging.info(f"Entering main loop. Sleep time is set to {SLEEP_MINUTES} min.")
+    LOGGER.info(f"Entering main loop. Sleep time is set to {SLEEP_MINUTES} min.")
     while True:
         try:
             if refresh_time - current_milli_time() < 2000:
-                logging.info("Refresh token")
+                LOGGER.info("Refresh token")
                 try:
                     token, refresh_time = refresh_token(cookie)
                 except JSONDecodeError as err:
-                    logging.error(f"Error after retry: {str(err)}")
+                    LOGGER.error(f"Error after retry: {str(err)}")
                     _sleep()
                     continue
 
@@ -282,7 +282,7 @@ def main(cookie):
             try:
                 buddylist = get_buddylist(token)
             except ConnectionError as err:
-                logging.error(f"Error after retry: {str(err)}")
+                LOGGER.error(f"Error after retry: {str(err)}")
                 _sleep()
                 continue
 
@@ -294,18 +294,18 @@ def main(cookie):
                         add_to_replay_playlist(sp, own_name, own_current_song)
                         last_own_current_song = own_current_song
                     else:
-                        logging.debug("No own changes")
+                        LOGGER.debug("No own changes")
 
             current_songs = parse_buddylist(buddylist)
-            logging.debug(current_songs)
+            LOGGER.debug(current_songs)
             if last_current_songs != current_songs:
                 add_to_playlist(sp, current_songs)
                 last_current_songs = current_songs
             else:
-                logging.debug("No changes")
+                LOGGER.debug("No changes")
             _sleep()
         except Exception as err:
-            logging.exception("Error in main loop:")
+            LOGGER.exception("Error in main loop:")
             _sleep()
             continue
 
