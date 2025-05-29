@@ -1,2 +1,2 @@
 spotipy==2.24.0
-tenacity==8.0.1
+tenacity==9.1.2
