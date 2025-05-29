@@ -1,30 +1,37 @@
 #!/usr/bin/env python3
 
+import logging
+import os
 import sys
+import time
+from datetime import datetime
+from json import JSONDecodeError
+from pathlib import Path
+from signal import SIGINT, SIGTERM, signal
+from sys import exit
+
 import requests
 import spotipy
-import time
-import logging
-from datetime import datetime
-from signal import SIGTERM, SIGINT, signal
-from sys import exit
-from pathlib import Path
 from requests.exceptions import ConnectionError, HTTPError, TooManyRedirects
-import os
-from json import JSONDecodeError
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 BUDDY_PLAYLISTS = {}
 
 SLEEP_MINUTES = int(os.getenv("SLEEP_MINUTES", "2"))
-TRACK_REPLAY_PLAYLIST = os.getenv("TRACK_REPLAY_PLAYLIST", "False").lower() in ("true", "1")
+TRACK_REPLAY_PLAYLIST = os.getenv("TRACK_REPLAY_PLAYLIST", "False").lower() in (
+    "true",
+    "1",
+)
 TRACK_SELF = os.getenv("TRACK_SELF", "False").lower() in ("true", "1")
 
 
 def setup_logger():
-    log_formatter = logging.Formatter(
-        "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s"
-    )
+    log_formatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
     module_logger = logging.getLogger(__name__)
     module_logger.setLevel(logging.DEBUG)
 
@@ -45,7 +52,9 @@ def setup_logger():
 
     return module_logger
 
+
 LOGGER = setup_logger()
+
 
 def handler(_signal_received, _frame):
     print("\nGot SIGINT. Exiting! ✨")
@@ -198,9 +207,9 @@ def has_to_be_added_replay(sp, playlist_id, song):
     if last_song_index < 0:
         return True
 
-    last_song_uri = sp.playlist_items(
-        playlist_id, offset=last_song_index, fields="items.track.uri"
-    )["items"][0]["track"]["uri"]
+    last_song_uri = sp.playlist_items(playlist_id, offset=last_song_index, fields="items.track.uri")["items"][0][
+        "track"
+    ]["uri"]
 
     return song != last_song_uri
 
