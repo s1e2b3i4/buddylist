@@ -6,7 +6,7 @@ import spotipy
 import time
 import logging
 from datetime import datetime
-from signal import signal, SIGINT
+from signal import SIGTERM, SIGINT, signal
 from sys import exit
 from pathlib import Path
 from requests.exceptions import ConnectionError, HTTPError, TooManyRedirects
@@ -61,16 +61,32 @@ def _sleep():
     time.sleep(SLEEP_MINUTES * 60)
 
 
+def get_totp():
+    try:
+        r = requests.get("https://totp-gateway.glitch.me/create", timeout=5)
+        r.raise_for_status()
+        data = r.json()
+        totp = data.get("totp")
+        timestamp = data.get("timestamp")
+        if not totp or not timestamp:
+            LOGGER.error("TOTP or timestamp missing in response.")
+            return None, None
+        return totp, timestamp
+    except (requests.RequestException, ValueError) as err:
+        LOGGER.error(f"Failed to get TOTP: {err}")
+        return None, None
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1.5, min=4, max=10),
     retry=retry_if_exception_type(JSONDecodeError),
     reraise=True,
 )
-def get_web_token(cookie):
+def get_web_token(cookie, totp, timestamp):
     try:
         r = requests.get(
-            "https://open.spotify.com/get_access_token?reason=transport&productType=web_player",
+            f"https://open.spotify.com/get_access_token?reason=init&productType=web_player&totpVer=5&totp={totp}&cTime={timestamp}",
             cookies={"sp_dc": f"{cookie}"},
             timeout=5,
         )
@@ -81,6 +97,10 @@ def get_web_token(cookie):
             exit(1)
         LOGGER.error(err)
         return "", 0
+    if r.status_code != 200:
+        LOGGER.error("Invalid cookie or TOTP. Please check your cookie and try again.")
+        LOGGER.error(f"Response: {r.text}")
+        exit(1)
     return r.json()["accessToken"], int(r.json()["accessTokenExpirationTimestampMs"])
 
 
@@ -117,7 +137,7 @@ def parse_buddylist(buddylist):
 
 
 def init(cookie):
-    token, refreh_time = get_web_token(cookie)
+    token, refreh_time = get_web_token(cookie, *get_totp())
     sp = spotipy.Spotify(auth=token, requests_timeout=5, retries=4, backoff_factor=0.2)
 
     return token, refreh_time, sp
@@ -254,7 +274,7 @@ def is_local_song(song: str):
 
 
 def refresh_token(cookie):
-    token, refresh_time = get_web_token(cookie)
+    token, refresh_time = get_web_token(cookie, *get_totp())
     return token, refresh_time
 
 
@@ -312,6 +332,7 @@ def main(cookie):
 
 if __name__ == "__main__":
     signal(SIGINT, handler)
+    signal(SIGTERM, handler)
     try:
         cookie = Path("cookie.txt").read_text().replace("\n", "")
     except FileNotFoundError as err:
