@@ -18,6 +18,7 @@ from tenacity import (
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
+    wait_fixed,
 )
 
 BUDDY_PLAYLISTS = {}
@@ -31,7 +32,9 @@ TRACK_SELF = os.getenv("TRACK_SELF", "False").lower() in ("true", "1")
 
 
 def setup_logger():
-    log_formatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+    log_formatter = logging.Formatter(
+        "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s"
+    )
     module_logger = logging.getLogger(__name__)
     module_logger.setLevel(logging.DEBUG)
 
@@ -70,6 +73,12 @@ def _sleep():
     time.sleep(SLEEP_MINUTES * 60)
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1.5, min=4, max=10),
+    retry=retry_if_exception_type(JSONDecodeError),
+    reraise=True,
+)
 def get_totp():
     try:
         r = requests.get("https://totp-gateway.glitch.me/create", timeout=5)
@@ -145,9 +154,27 @@ def parse_buddylist(buddylist):
     return current_songs
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(7),
+    retry=retry_if_exception_type(spotipy.exceptions.SpotifyException),
+    reraise=True,
+)
 def init(cookie):
     token, refreh_time = get_web_token(cookie, *get_totp())
     sp = spotipy.Spotify(auth=token, requests_timeout=5, retries=4, backoff_factor=0.2)
+
+    try:
+        sp.current_user()
+    except spotipy.exceptions.SpotifyException as err:
+        if err.http_status == 401:
+            LOGGER.error(
+                "Invalid token. Please check your cookie and try again. (Retrying...)"
+            )
+            raise err
+        else:
+            LOGGER.error(f"Unexpected error: {err}")
+            exit(1)
 
     return token, refreh_time, sp
 
@@ -161,7 +188,9 @@ def create_new_playlist(sp, playlist_name):
         user = sp.me()["id"]
         sp.user_playlist_create(user, playlist_name, public=False)
         current_playlist = sp.user_playlists(user, limit=1)
-        BUDDY_PLAYLISTS[current_playlist["items"][0]["name"]] = current_playlist["items"][0]["id"]
+        BUDDY_PLAYLISTS[current_playlist["items"][0]["name"]] = current_playlist[
+            "items"
+        ][0]["id"]
     except ConnectionError as err:
         LOGGER.error(err)
         return ""
@@ -207,9 +236,9 @@ def has_to_be_added_replay(sp, playlist_id, song):
     if last_song_index < 0:
         return True
 
-    last_song_uri = sp.playlist_items(playlist_id, offset=last_song_index, fields="items.track.uri")["items"][0][
-        "track"
-    ]["uri"]
+    last_song_uri = sp.playlist_items(
+        playlist_id, offset=last_song_index, fields="items.track.uri"
+    )["items"][0]["track"]["uri"]
 
     return song != last_song_uri
 
